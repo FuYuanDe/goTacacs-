@@ -2,7 +2,7 @@
 package main
 
 import (
-	"fmt"
+	"encoding/binary"
 )
 
 const (
@@ -37,6 +37,16 @@ const (
 | 							 	length							    |
 +----------------+----------------+----------------+----------------+
 */
+
+//packet offset
+const (
+	Version   = 0
+	Type      = 1
+	SeqNo     = 2
+	Flags     = 3
+	SessionID = 4
+	Length    = 8
+)
 
 type TacacsHeader struct {
 	TacacsVersion   uint8
@@ -106,14 +116,22 @@ type AuthenStartPacket struct {
 	Data       string
 }
 
-func (a *AuthenStartPacket) marshal(buf []byte) ([]byte, error) {
-	buf = append(buf, a.Header.TacacsVersion, a.Header.TacacsType, a.Header.TacacsSeqNo, a.Header.TacacsFlags)
-	buf = append(buf, a.Header.TacacsSessionID, a.Header.TacacsLength)
-	buf = append(buf, uint8(len(a.User)), uint8(len(a.Port)), uint8(len(a.RmtAddr)), uint8(len(a.Data)))
+func (a *AuthenStartPacket) marshal() ([]byte, error) {
+	buf := make([]byte, 1024)
+	buf[Version] = a.Header.TacacsVersion
+	buf[Type] = a.Header.TacacsType
+	buf[SeqNo] = a.Header.TacacsSeqNo
+	buf[Flags] = a.Header.TacacsFlags
+
+	binary.BigEndian.PutUint32(buf[SessionID:], a.Header.TacacsSessionID)
+	binary.BigEndian.PutUint32(buf[Length:], a.Header.TacacsLength)
+	buf = append(buf, a.Action, a.PrivLvl, a.AuthenType, a.Service)
+	buf = append(buf, uint8(len(a.User)), uint8(len(a.Port)))
+	buf = append(buf, uint8(len(a.RmtAddr)), uint8(len(a.Data)))
 	buf = append(buf, a.User...)
-	buf = append(buf, a.Port)
-	buf = append(buf, a.RmtAddr)
-	buf = append(buf, a.Data)
+	buf = append(buf, a.Port...)
+	buf = append(buf, a.RmtAddr...)
+	buf = append(buf, a.Data...)
 
 	return buf, nil
 }
