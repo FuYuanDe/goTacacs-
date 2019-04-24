@@ -37,8 +37,7 @@ type Config struct {
 }
 
 type Manager struct {
-	Sessions         sync.Map
-	ConnMultiplexing bool
+	Sessions sync.Map
 
 	Trans *Transport
 	ctx   context.Context
@@ -52,13 +51,20 @@ type Session struct {
 	SessionID    uint32
 	UserName     string
 	Password     string
+	ReadBuffer   chan []byte
+	mng          *Manager
+	t            *Transport
+	ctx          context.Context
 }
 
-func NewSession(name, passwd string) {
+func NewSession(ctx context.Context, name, passwd string) *Session {
 	sess := &Session{}
 	sess.Password = passwd
 	sess.UserName = name
 	sess.SessionSeqNo = 1
+	sess.ReadBuffer = make(chan []byte, 10)
+	sess.mng = TacacsMng
+	sess.ctx = ctx
 	rand.Seed(time.Now().Unix())
 	SessionID := rand.Uint32()
 	for {
@@ -69,8 +75,10 @@ func NewSession(name, passwd string) {
 		}
 	}
 	sess.SessionID = SessionID
-	TacacsMng.Sessions.Store(SessionID, &sess)
+	sess.t = newTransport(ctx, TacacsMng.Config)
 
+	TacacsMng.Sessions.Store(SessionID, &sess)
+	return sess
 }
 
 var TacacsMng *Manager
@@ -78,4 +86,10 @@ var TacacsMng *Manager
 func TacacsInit() {
 	TacacsMng = &Manager{}
 	TacacsMng.ctx = context.TODO()
+}
+
+func (sess *Session) close() {
+	sess.mng.Sessions.Delete(sess.SessionID)
+	sess.t.close()
+	//close(sess.)
 }
