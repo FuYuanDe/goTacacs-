@@ -2,8 +2,10 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 )
 
 type Transport struct {
@@ -13,10 +15,14 @@ type Transport struct {
 
 func newTransport(ctx context.Context, config TacacsConfig) (*Transport, error) {
 	t := &Transport{}
+	var err error
 	t.netConn, err = newConn(ctx, config)
 	if err != nil {
 		return nil, err
+	} else {
+		fmt.Println("create conn success")
 	}
+
 	t.sendChn = make(chan []byte, 100)
 	go t.readLoop()
 	go t.writeLoop()
@@ -29,6 +35,7 @@ func (t *Transport) close() {
 	t.netConn.Lock()
 	if t.netConn.nc != nil {
 		t.netConn.nc.Close()
+		t.netConn.nc = nil
 	}
 	t.netConn.Unlock()
 	close(t.sendChn)
@@ -44,6 +51,7 @@ func (t *Transport) writeLoop() {
 			}
 
 			dataLen := len(data)
+			fmt.Printf("data to be send:%d\n", dataLen)
 			sendLen := 0
 			for {
 				num, err := t.netConn.nc.Write(data[sendLen:])
@@ -75,7 +83,7 @@ func (t *Transport) readPacketHdr() ([]byte, error) {
 		}
 
 		readLen += num
-		if readLen == hdrLen {
+		if readLen == HeaderLen {
 			return data, nil
 		}
 	}
@@ -89,7 +97,7 @@ func (t *Transport) readLoop() {
 			t.netConn.RUnlock()
 			return
 		}
-		t.newConn.RUnlock()
+		t.netConn.RUnlock()
 
 		h, err := t.readPacketHdr()
 		if err != nil {
@@ -115,7 +123,7 @@ func (t *Transport) readLoop() {
 		recv, err := t.readPacketBody(h)
 		if err != nil {
 			if err == io.EOF {
-				fmt.Println("read EOF fail")
+				fmt.Println("read Eof, close")
 				return
 			}
 
@@ -123,16 +131,23 @@ func (t *Transport) readLoop() {
 			continue
 		}
 
-		fmt.Println("conn read success")
+		fmt.Println("conn read success,dataLen:", len(recv))
 		dispatch(recv)
 	}
 }
 
 func dispatch(data []byte) {
-	sessionID := binary.BigEndian.Uint32(data[SessionID])
-	sess, ok := TacacsMng.Sessions.Load(sessionID)
+
+	sessionID := binary.BigEndian.Uint32(data[SessionIDOffset:])
+	value, ok := TacacsMng.Sessions.Load(sessionID)
 	if ok {
-		sess.ReadBuffer <- data
+		sess, ok := value.(*Session)
+		if ok {
+			sess.ReadBuffer <- data
+		} else {
+			fmt.Printf("*** error, interface assert fail ***")
+		}
+
 	} else {
 		fmt.Println("error, no invalid session found")
 	}
@@ -140,7 +155,7 @@ func dispatch(data []byte) {
 
 func (t *Transport) readPacketBody(data []byte) ([]byte, error) {
 
-	bodyLen := binary.BigEndian.Uint32(data[Length:])
+	bodyLen := binary.BigEndian.Uint32(data[LengthOffset:])
 	if bodyLen > MaxPacketLen {
 		return nil, fmt.Errorf("packet too large")
 	} else if bodyLen == 0 {

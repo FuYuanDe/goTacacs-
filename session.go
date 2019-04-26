@@ -3,8 +3,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"sync"
+	"time"
 )
 
 type TacacsConfig struct {
@@ -16,25 +18,22 @@ type TacacsConfig struct {
 	ConnMultiplexing bool
 }
 
-func ConfigSet(config TacacsCOnfig) {
+func TacacsConfigSet(config TacacsConfig) {
 	TacacsMng.Lock()
 	defer TacacsMng.Unlock()
 	TacacsMng.Config = config
 }
 
-func ConfigGet() (config TacacsCOnfig) {
+func TacacsConfigGet() (config TacacsConfig) {
 	TacacsMng.Lock()
 	defer TacacsMng.Unlock()
-	config := TacacsMng.Config
-	return config
+	return TacacsMng.Config
+
 }
 
 const (
 	MaxUint8 = ^uint8(0)
 )
-
-type Config struct {
-}
 
 type Manager struct {
 	Sessions sync.Map
@@ -57,7 +56,7 @@ type Session struct {
 	ctx          context.Context
 }
 
-func NewSession(ctx context.Context, name, passwd string) *Session {
+func NewSession(ctx context.Context, name, passwd string) (*Session, error) {
 	sess := &Session{}
 	sess.Password = passwd
 	sess.UserName = name
@@ -74,18 +73,30 @@ func NewSession(ctx context.Context, name, passwd string) *Session {
 			break
 		}
 	}
+	fmt.Printf("sessionID :%d\n", SessionID)
 	sess.SessionID = SessionID
-	sess.t = newTransport(ctx, TacacsMng.Config)
+	t, err := newTransport(ctx, TacacsMng.Config)
+	if err != nil {
+		fmt.Printf("create new transport fail,%s\n", err.Error())
+		return nil, err
+	} else {
+		sess.t = t
+	}
 
-	TacacsMng.Sessions.Store(SessionID, &sess)
-	return sess
+	TacacsMng.Sessions.Store(SessionID, sess)
+	return sess, nil
 }
 
 var TacacsMng *Manager
 
 func TacacsInit() {
-	TacacsMng = &Manager{}
-	TacacsMng.ctx = context.TODO()
+	if TacacsMng == nil {
+		TacacsMng = &Manager{}
+		TacacsMng.ctx = context.TODO()
+		fmt.Printf("--> tacacs init success")
+	} else {
+		fmt.Printf("--> tacacs already init")
+	}
 }
 
 func (sess *Session) close() {

@@ -2,12 +2,13 @@
 package main
 
 import (
-	"time"
-	"errors"
-	"strconv"
-	"fmt"
-	"encoding/binary"
 	"crypto/md5"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const (
@@ -67,13 +68,14 @@ type TacacsHeader struct {
 	TacacsLength    uint32
 }
 
-func (h *TacacsHeader)unmarshal(data []byte){
-	h.TacacsVersion = data[VersionOffset]
-	h.TacacsType = data[TypeOffset]
-	h.TacacsSeqNo = data[SeqNoOffset]
-	h.TacacsFlags = data[FlagsOffset]
-	h.TacacsSessionID = binary.BigEndian.Uint32(data[SessionIDOffset])
-	h.TacacsLength = binary.BigEndian.Uint32(data[LengthOffset])
+func (h TacacsHeader) unmarshal(data []byte) {
+	h.TacacsVersion = uint8(data[VersionOffset])
+	h.TacacsType = uint8(data[TypeOffset])
+	h.TacacsSeqNo = uint8(data[SeqNoOffset])
+	h.TacacsFlags = uint8(data[FlagsOffset])
+	h.TacacsSessionID = binary.BigEndian.Uint32(data[SessionIDOffset:])
+	h.TacacsLength = binary.BigEndian.Uint32(data[LengthOffset:])
+	//fmt.Printf("body len:%d,content:%s--end\n", h.TacacsLength, string(data[HeaderLen:]))
 }
 
 const (
@@ -179,14 +181,16 @@ func GetIP(addr string) (string, error) {
 	}
 }
 
-
-func AuthenASCII(username, passwd string)error {
-	sess := NewSession(TacacsMng.ctx, username, passwd)
+func AuthenASCII(username, passwd string) error {
+	sess, err := NewSession(TacacsMng.ctx, username, passwd)
+	if err != nil {
+		fmt.Printf("create new session fail,%s\n", err.Error())
+	}
 	packet := &AuthenStartPacket{}
 	packet.Header.TacacsVersion = (TacacsMajorVersion | TacacsMinorVersionDefault)
 	packet.Header.TacacsType = TacacsTypeAuthen
-	packet.Header.TacacsSeqNo = sess.SessionSeqNo++
-	
+	packet.Header.TacacsSeqNo = sess.SessionSeqNo
+	sess.SessionSeqNo++
 	if sess.mng.Config.ConnMultiplexing {
 		packet.Header.TacacsFlags |= TacacsSingleConnectFlag
 	}
@@ -195,85 +199,93 @@ func AuthenASCII(username, passwd string)error {
 	packet.PrivLvl = TacacsPrivLvlRoot
 	packet.AuthenType = TacacsAuthenTypeASCII
 	packet.Service = TacacsAuthenServiceLogin
-	
+
 	totalLen := HeaderLen + 8
 	packet.UserLen = uint8(len(username))
 	packet.User = username
-	totalLen += packet.UserLen
-	
-	port,err := GetPort(sess.t.netConn.nc.LocalAddr().String())
+	totalLen += int(packet.UserLen)
+
+	port, err := GetPort(sess.t.netConn.nc.LocalAddr().String())
 	if err != nil {
 		fmt.Printf("GetPort Fail:%s\n", err.Error())
-	}else{
-		packet.Port = strconv.FormatUint(uint64(port),16)
+	} else {
+		packet.Port = strconv.FormatUint(uint64(port), 16)
 		fmt.Printf("LocalPort : %d\n", port)
 	}
-	packet.PortLen =  uint8(len(packet.Port))
-	totalLen += packet.PortLen
-	
+	packet.PortLen = uint8(len(packet.Port))
+	totalLen += int(packet.PortLen)
+
 	addr, err := GetIP(sess.t.netConn.nc.LocalAddr().String())
 	if err != nil {
 		fmt.Printf("GetIP fail,%s\n", err.Error())
 		packet.RmtAddrLen = 0
-	}else{
+	} else {
 		packet.RmtAddr = addr
-		packet.RmtAddrLen = uint8(addr)		
+		packet.RmtAddrLen = uint8(len(addr))
 	}
-	totalLen += packet.RmtAddrLen
-	
+	totalLen += int(packet.RmtAddrLen)
+
 	packet.DataLen = 0
+	packet.Header.TacacsLength = uint32(totalLen)
+	fmt.Printf("total len :%d\n", totalLen)
 	data, err := packet.marshal()
 	if err != nil {
 		fmt.Printf("packet marshal fail, error msg :%s\n", err.Error())
 		return err
-	}	
-	crypt(data,sess.Password)
+	} else {
+		fmt.Printf("total byte :%d\n", len(data))
+	}
+	crypt(data, []byte(sess.Password))
 	sess.t.sendChn <- data
-	select{
-		case data := <-sess.ReadBuffer:
-		case <- time.After(10*time.Second)
-			fmt.Printf("receive reply timeout")
-			//关闭连接
-			sess.t.close()
-			return errors.New("timeout")
+	select {
+	case buffer := <-sess.ReadBuffer:
+		fmt.Printf("recv dataLen :%d\n", len(buffer))
+		//check version
+		reply := &AuthenReplyPacket{}
+
+		reply.Header.unmarshal(buffer)
+		crypt(buffer, []byte(passwd))
+		reply.unmarshal(buffer)
+		switch reply.Status {
+
+		case TacacsAuthenStatusPass:
+			fmt.Printf("server reply pass\n")
+		case TacacsAuthenStatusFail:
+			fmt.Printf("server reply fail\n")
+		case TacacsAuthenStatusGetData:
+			fmt.Printf("server reply getdata\n")
+		case TacacsAuthenStatusGetUser:
+			fmt.Printf("server reply getuser\n")
+		case TacacsAuthenStatusGetPass:
+			fmt.Printf("server reply getpass\n")
+		case TacacsAuthenStatusRestart:
+			fmt.Printf("server reply restart\n")
+		case TacacsAuthenStatusError:
+			fmt.Printf("server reply error\n")
+		case TacacsAuthenStatusFollow:
+			fmt.Printf("server reply follow\n")
+		default:
+			fmt.Printf("server reply unrecognized,%d\n", reply.Status)
+		}
+		return nil
+	case <-time.After(10 * time.Second):
+		fmt.Printf("receive reply timeout")
+		//关闭连接
+		sess.t.close()
+		return errors.New("timeout")
 	}
-	//check version
-	reply := &AuthenReplyPacket{}
-	reply.Header.unmarshal(data)	
-	crypt(data, passwd)		
-	reply.unmarshal(data)
-	switch reply.Status {
-	case TacacsAuthenStatusPass    :
-	fmt.Printf("server reply pass\n")
-	case TacacsAuthenStatusFail    :
-	fmt.Printf("server reply fail\n")
-	case TacacsAuthenStatusGetData    :
-	fmt.Printf("server reply getdata\n")
-	case TacacsAuthenStatusGetUser    :
-	fmt.Printf("server reply getuser\n")
-	case TacacsAuthenStatusGetPass    :
-	fmt.Printf("server reply getpass\n")
-	case TacacsAuthenStatusRestart    :
-	fmt.Printf("server reply restart\n")
-	case TacacsAuthenStatusError    :
-	fmt.Printf("server reply error\n")
-	case TacacsAuthenStatusFollow    :
-	fmt.Printf("server reply follow\n")
-	default :
-	fmt.Printf("server reply unrecognized\n")
-	}
+
 }
 
-
 func (a *AuthenStartPacket) marshal() ([]byte, error) {
-	buf := make([]byte, 1024)
-	buf[Version] = a.Header.TacacsVersion
-	buf[Type] = a.Header.TacacsType
-	buf[SeqNo] = a.Header.TacacsSeqNo
-	buf[Flags] = a.Header.TacacsFlags
+	buf := make([]byte, HeaderLen)
+	buf[VersionOffset] = a.Header.TacacsVersion
+	buf[TypeOffset] = a.Header.TacacsType
+	buf[SeqNoOffset] = a.Header.TacacsSeqNo
+	buf[FlagsOffset] = a.Header.TacacsFlags
 
-	binary.BigEndian.PutUint32(buf[SessionID:], a.Header.TacacsSessionID)
-	binary.BigEndian.PutUint32(buf[Length:], a.Header.TacacsLength)
+	binary.BigEndian.PutUint32(buf[SessionIDOffset:], a.Header.TacacsSessionID)
+	binary.BigEndian.PutUint32(buf[LengthOffset:], 0)
 	buf = append(buf, a.Action, a.PrivLvl, a.AuthenType, a.Service)
 	buf = append(buf, uint8(len(a.User)), uint8(len(a.Port)))
 	buf = append(buf, uint8(len(a.RmtAddr)), uint8(len(a.Data)))
@@ -281,27 +293,27 @@ func (a *AuthenStartPacket) marshal() ([]byte, error) {
 	buf = append(buf, a.Port...)
 	buf = append(buf, a.RmtAddr...)
 	buf = append(buf, a.Data...)
-
+	binary.BigEndian.PutUint32(buf[LengthOffset:], uint32(len(buf)-HeaderLen))
 	return buf, nil
 }
 
 const (
-	TacacsAuthenStatusPass    = 0x01
-	TacacsAuthenStatusFail    = 0x02
-	TacacsAuthenStatusGetData = 0x03
-	TacacsAuthenStatusGetUser = 0x04
-	TacacsAuthenStatusGetPass = 0x05
-	TacacsAuthenStatusRestart = 0x06
-	TacacsAuthenStatusError   = 0x07
-	TacacsAuthenStatusFollow  = 0x21
+	TacacsAuthenStatusPass    = uint8(0x01)
+	TacacsAuthenStatusFail    = uint8(0x02)
+	TacacsAuthenStatusGetData = uint8(0x03)
+	TacacsAuthenStatusGetUser = uint8(0x04)
+	TacacsAuthenStatusGetPass = uint8(0x05)
+	TacacsAuthenStatusRestart = uint8(0x06)
+	TacacsAuthenStatusError   = uint8(0x07)
+	TacacsAuthenStatusFollow  = uint8(0x21)
 )
 
 const (
-	TacacsReplyFlagNoEcho = 0x01
+	TacacsReplyFlagNoEcho = uint8(0x01)
 )
 
 const (
-	TacacsContinueFlagAbort = 0x01
+	TacacsContinueFlagAbort = uint8(0x01)
 )
 
 /*
@@ -327,19 +339,28 @@ type AuthenReplyPacket struct {
 	Data         []byte
 }
 
-func (a *AuthenReplyPacket)unmarshal(data []byte)error{
-	body := data[HeaderLen:]
+func (a *AuthenReplyPacket) unmarshal(data []byte) error {
+	//body := data[HeaderLen:]
 	a.Status = uint8(data[0])
+	fmt.Println("status:", a.Status)
 	a.Flags = uint8(data[1])
-	a.ServerMsgLen = binary.BigEndian.Uint16(data[2:])
-	a.DataLen = binary.BigEndian.Uint16(data[4:])
+	fmt.Println("flags:", a.Flags)
+	a.ServerMsgLen = binary.LittleEndian.Uint16(data[2:])
+	fmt.Printf("status and flags : %x,%x\n", data[0], data[1])
+
+	fmt.Printf("ServerMsg len :%d,DataLen:%d\n", a.ServerMsgLen, a.DataLen)
+	a.DataLen = binary.LittleEndian.Uint16(data[4:])
+	fmt.Println("DATA:" + string(data[6:]))
+
 	if a.ServerMsgLen != 0 {
-		a.ServerMsg = data[6:(a.ServerMsgLen+6)]	
+		a.ServerMsg = data[6:(a.ServerMsgLen + 6)]
+		fmt.Println("server msg: " + string(a.ServerMsg))
 	}
-	if a.DataLen != 0{
-		a.Data = data[(a.ServerMsgLen+6):]
+	if a.DataLen != 0 {
+		a.Data = data[(a.ServerMsgLen + 6):]
+		fmt.Println("data msg : " + string(a.Data))
 	}
-	
+
 	return nil
 }
 
@@ -372,5 +393,5 @@ func crypt(p, key []byte) {
 			body[i] ^= c
 		}
 		body = body[len(sum):]
-	}	
+	}
 }
