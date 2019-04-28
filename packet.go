@@ -289,6 +289,7 @@ func (a *AuthenStartPacket) marshal() ([]byte, error) {
 	buf = append(buf, a.Action, a.PrivLvl, a.AuthenType, a.Service)
 	buf = append(buf, uint8(len(a.User)), uint8(len(a.Port)))
 	buf = append(buf, uint8(len(a.RmtAddr)), uint8(len(a.Data)))
+	fmt.Printf("userLen:%d, portLen:%d,rmtAddrLen:%d,dataLen:%d\n", uint8(len(a.User)), uint8(len(a.Port)), uint8(len(a.RmtAddr)), uint8(len(a.Data)))
 	buf = append(buf, a.User...)
 	buf = append(buf, a.Port...)
 	buf = append(buf, a.RmtAddr...)
@@ -377,6 +378,7 @@ func crypt(p, key []byte) {
 	h := md5.New()
 	//消息体
 	body := p[HeaderLen:]
+	fmt.Printf("crypt body len:%d\n", len(body))
 
 	for len(body) > 0 {
 		h.Reset()
