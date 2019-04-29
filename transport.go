@@ -34,6 +34,7 @@ func newTransport(ctx context.Context, config TacacsConfig) (*Transport, error) 
 func (t *Transport) close() {
 	t.netConn.Lock()
 	if t.netConn.nc != nil {
+		fmt.Println("close transport")
 		t.netConn.nc.Close()
 		t.netConn.nc = nil
 	}
@@ -46,7 +47,7 @@ func (t *Transport) writeLoop() {
 		select {
 		case data, ok := <-t.sendChn:
 			if !ok {
-				fmt.Println("transport send channel closed")
+				fmt.Println("***transport send channel closed")
 				return
 			}
 
@@ -70,6 +71,7 @@ func (t *Transport) writeLoop() {
 	}
 }
 
+//read 读取指定长度字符
 func (t *Transport) readPacketHdr() ([]byte, error) {
 	data := make([]byte, HeaderLen, 1024)
 
@@ -143,6 +145,7 @@ func dispatch(data []byte) {
 	if ok {
 		sess, ok := value.(*Session)
 		if ok {
+			fmt.Printf("found session,dispatch success\n")
 			sess.ReadBuffer <- data
 		} else {
 			fmt.Printf("*** error, interface assert fail ***")

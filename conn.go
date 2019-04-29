@@ -46,6 +46,7 @@ func (c *conn) connect(config TacacsConfig) error {
 		fmt.Printf("Create tcp connection %s : %s fail:%s", config.ServerIP, config.ServerPort, err.Error())
 		return err
 	}
+
 	c.nc = nc
 
 	return nil

@@ -41,7 +41,9 @@ type Manager struct {
 	Trans *Transport
 	ctx   context.Context
 	sync.RWMutex
-	Config TacacsConfig
+
+	ServerConnMultiplexing bool
+	Config                 TacacsConfig
 }
 
 type Session struct {
@@ -54,6 +56,7 @@ type Session struct {
 	mng          *Manager
 	t            *Transport
 	ctx          context.Context
+	restart      bool
 }
 
 func NewSession(ctx context.Context, name, passwd string) (*Session, error) {

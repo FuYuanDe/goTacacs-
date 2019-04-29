@@ -68,8 +68,9 @@ type TacacsHeader struct {
 	TacacsLength    uint32
 }
 
-func (h TacacsHeader) unmarshal(data []byte) {
+func (h *TacacsHeader) unmarshal(data []byte) {
 	h.TacacsVersion = uint8(data[VersionOffset])
+	//fmt.Println("version: %d", h.TacacsVersion)
 	h.TacacsType = uint8(data[TypeOffset])
 	h.TacacsSeqNo = uint8(data[SeqNoOffset])
 	h.TacacsFlags = uint8(data[FlagsOffset])
@@ -237,44 +238,75 @@ func AuthenASCII(username, passwd string) error {
 	}
 	crypt(data, []byte(sess.Password))
 	sess.t.sendChn <- data
-	select {
-	case buffer := <-sess.ReadBuffer:
-		fmt.Printf("recv dataLen :%d\n", len(buffer))
-		//check version
-		reply := &AuthenReplyPacket{}
+	for {
+		select {
+		case buffer := <-sess.ReadBuffer:
+			fmt.Printf("recv dataLen :%d\n", len(buffer))
 
-		reply.Header.unmarshal(buffer)
-		crypt(buffer, []byte(passwd))
-		reply.unmarshal(buffer)
-		switch reply.Status {
+			reply := &AuthenReplyPacket{}
 
-		case TacacsAuthenStatusPass:
-			fmt.Printf("server reply pass\n")
-		case TacacsAuthenStatusFail:
-			fmt.Printf("server reply fail\n")
-		case TacacsAuthenStatusGetData:
-			fmt.Printf("server reply getdata\n")
-		case TacacsAuthenStatusGetUser:
-			fmt.Printf("server reply getuser\n")
-		case TacacsAuthenStatusGetPass:
-			fmt.Printf("server reply getpass\n")
-		case TacacsAuthenStatusRestart:
-			fmt.Printf("server reply restart\n")
-		case TacacsAuthenStatusError:
-			fmt.Printf("server reply error\n")
-		case TacacsAuthenStatusFollow:
-			fmt.Printf("server reply follow\n")
-		default:
-			fmt.Printf("server reply unrecognized,%d\n", reply.Status)
+			(&(reply.Header)).unmarshal(buffer)
+			fmt.Println("version: %d", reply.Header.TacacsVersion)
+			err := reply.varify(sess)
+			if err != nil {
+				fmt.Printf("%s\n", err.Error())
+				return err
+			}
+			crypt(buffer, []byte(passwd))
+
+			body := buffer[HeaderLen:]
+			reply.unmarshal(body)
+
+			switch reply.Status {
+			case TacacsAuthenStatusPass:
+				fmt.Printf("server reply pass\n")
+				break
+			case TacacsAuthenStatusFail:
+				fmt.Printf("server reply fail\n")
+				break
+			case TacacsAuthenStatusGetData:
+				fmt.Printf("server reply getdata\n")
+				break
+			case TacacsAuthenStatusGetUser:
+				fmt.Printf("server reply getuser\n")
+				break
+			case TacacsAuthenStatusGetPass:
+				fmt.Printf("server reply getpass\n")
+				data := &AuthenContinuePacket{}
+				data.init(sess)
+				buf, err := data.marshal()
+				if err != nil {
+					fmt.Printf("continue packet marshal fail\n")
+				} else {
+					//crypt(buf, []byte(sess.Password))
+					//buf = append(buf, "hellllllloooooooooooooooooooo"...)
+
+					sess.t.sendChn <- buf
+					buffer := []byte("saaaaaaaaaa")
+					sess.t.sendChn <- buffer
+					fmt.Println("send continue packet to transport buffer")
+				}
+			case TacacsAuthenStatusRestart:
+				fmt.Printf("server reply restart\n")
+				break
+			case TacacsAuthenStatusError:
+				fmt.Printf("server reply error\n")
+				break
+			case TacacsAuthenStatusFollow:
+				fmt.Printf("server reply follow\n")
+				break
+			default:
+				fmt.Printf("server reply unrecognized,%d\n", reply.Status)
+			}
+		case <-time.After(100 * time.Second):
+			fmt.Printf("receive reply timeout\n")
+			//关闭连接
+			sess.t.close()
+			return errors.New("timeout")
 		}
-		return nil
-	case <-time.After(10 * time.Second):
-		fmt.Printf("receive reply timeout")
-		//关闭连接
-		sess.t.close()
-		return errors.New("timeout")
 	}
-
+	sess.t.close()
+	return nil
 }
 
 func (a *AuthenStartPacket) marshal() ([]byte, error) {
@@ -341,28 +373,127 @@ type AuthenReplyPacket struct {
 }
 
 func (a *AuthenReplyPacket) unmarshal(data []byte) error {
-	//body := data[HeaderLen:]
 	a.Status = uint8(data[0])
 	fmt.Println("status:", a.Status)
+
 	a.Flags = uint8(data[1])
 	fmt.Println("flags:", a.Flags)
-	a.ServerMsgLen = binary.LittleEndian.Uint16(data[2:])
+
+	a.ServerMsgLen = binary.BigEndian.Uint16(data[2:])
 	fmt.Printf("status and flags : %x,%x\n", data[0], data[1])
 
 	fmt.Printf("ServerMsg len :%d,DataLen:%d\n", a.ServerMsgLen, a.DataLen)
-	a.DataLen = binary.LittleEndian.Uint16(data[4:])
-	fmt.Println("DATA:" + string(data[6:]))
+	a.DataLen = binary.BigEndian.Uint16(data[4:])
 
 	if a.ServerMsgLen != 0 {
 		a.ServerMsg = data[6:(a.ServerMsgLen + 6)]
 		fmt.Println("server msg: " + string(a.ServerMsg))
 	}
+
 	if a.DataLen != 0 {
 		a.Data = data[(a.ServerMsgLen + 6):]
 		fmt.Println("data msg : " + string(a.Data))
 	}
 
 	return nil
+}
+
+func (a *AuthenReplyPacket) varify(s *Session) error {
+	//check version
+	if a.Header.TacacsVersion != (TacacsMajorVersion | TacacsMinorVersionDefault) {
+		fmt.Printf("version:%d, expect:%d\n", a.Header.TacacsVersion, (TacacsMajorVersion | TacacsMinorVersionDefault))
+		return errors.New("version mismatch")
+	}
+
+	//check flag
+	if a.Header.TacacsFlags == 1 {
+		s.mng.Lock()
+		if !s.mng.ServerConnMultiplexing {
+			s.mng.ServerConnMultiplexing = true
+		}
+		s.mng.Unlock()
+	}
+
+	//check seqNo
+	s.Lock()
+	if a.Header.TacacsSeqNo == s.SessionSeqNo {
+		if s.SessionSeqNo == 255 {
+			s.restart = true
+			s.Unlock()
+			return errors.New("session seqNo overflow,restart")
+		} else {
+			s.SessionSeqNo++
+		}
+	}
+	s.Unlock()
+
+	//check sessionID
+	return nil
+}
+
+/*
+ *		Authen Continue Packet
+ *	0                7                15               23               31
+ *	+----------------+----------------+----------------+----------------+
+ *	| 			user_msg len 		  |				 data_len 			|
+ *	+----------------+----------------+----------------+----------------+
+ *	| flags 		 |					 user_msg ...
+ *	+----------------+----------------+----------------+----------------+
+ *	| data ...
+ *	+----------------+
+ */
+
+type AuthenContinuePacket struct {
+	Header     TacacsHeader
+	UserMsgLen uint16
+	DataLen    uint16
+	Flags      uint8
+	Data       string
+	UserMsg    string
+}
+
+func (p *AuthenContinuePacket) init(s *Session) {
+	s.Lock()
+	defer s.Unlock()
+	p.Header.TacacsVersion = (TacacsMajorVersion | TacacsMinorVersionDefault)
+	p.Header.TacacsType = TacacsTypeAuthen
+	p.Header.TacacsSeqNo = s.SessionSeqNo
+	s.SessionSeqNo++
+	s.mng.Lock()
+	if s.mng.Config.ConnMultiplexing {
+		p.Header.TacacsFlags |= TacacsSingleConnectFlag
+	}
+	s.mng.Unlock()
+
+	p.Header.TacacsSessionID = s.SessionID
+	p.DataLen = 0
+	p.Header.TacacsLength = uint32(HeaderLen + 5 + len(s.Password))
+	fmt.Printf("continue packet len:%d\n", p.Header.TacacsLength)
+	p.UserMsgLen = uint16(len(s.Password))
+	p.UserMsg = s.Password
+}
+
+func (p *AuthenContinuePacket) marshal() ([]byte, error) {
+	//buf := make([]byte, p.Header.TacacsLength+HeaderLen)
+
+	buf := make([]byte, HeaderLen+4)
+	buf[VersionOffset] = p.Header.TacacsVersion
+	buf[TypeOffset] = p.Header.TacacsType
+	buf[SeqNoOffset] = p.Header.TacacsSeqNo
+	buf[FlagsOffset] = p.Header.TacacsFlags
+
+	binary.BigEndian.PutUint32(buf[SessionIDOffset:], p.Header.TacacsSessionID)
+	binary.BigEndian.PutUint32(buf[LengthOffset:], p.Header.TacacsLength)
+	binary.BigEndian.PutUint16(buf[HeaderLen:], p.UserMsgLen)
+	binary.BigEndian.PutUint16(buf[(HeaderLen+2):], p.DataLen)
+	//fmt.Printf("continue packet totlen: %d\n", len(buf))
+	buf = append(buf, p.Flags)
+	//fmt.Printf("continue packet totlen: %d\n", len(buf))
+	buf = append(buf, p.UserMsg...)
+	//fmt.Printf("continue packet totlen: %d\n", len(buf))
+	buf = append(buf, p.Data...)
+	//fmt.Printf("continue packet totlen: %d\n", len(buf))
+	return buf, nil
 }
 
 //解密后的数据
