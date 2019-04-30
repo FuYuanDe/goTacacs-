@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -16,6 +17,7 @@ type TacacsConfig struct {
 	LocalIP          string
 	LocalPort        uint16
 	ConnMultiplexing bool
+	ShareKey         string
 }
 
 func TacacsConfigSet(config TacacsConfig) {
@@ -106,4 +108,19 @@ func (sess *Session) close() {
 	sess.mng.Sessions.Delete(sess.SessionID)
 	sess.t.close()
 	//close(sess.)
+}
+
+func AuthenASCII(username, password string) error {
+	if TacacsMng == nil {
+		return errors.New("[tacacs] tacacs hasn't init ***")
+	} else {
+		sess, err := NewSession(TacacsMng.ctx, username, password)
+		if err != nil {
+			fmt.Printf("[tacacs] new session fail, %s", err.Error())
+			return err
+		} else {
+
+		}
+	}
+
 }

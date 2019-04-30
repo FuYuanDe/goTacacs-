@@ -47,7 +47,7 @@ func (t *Transport) writeLoop() {
 		select {
 		case data, ok := <-t.sendChn:
 			if !ok {
-				fmt.Println("***transport send channel closed")
+				fmt.Println("transport send channel closed")
 				return
 			}
 
