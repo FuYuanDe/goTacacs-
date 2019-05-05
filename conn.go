@@ -1,5 +1,5 @@
 //conn.go
-package main
+package tacacs
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type conn struct {
@@ -36,6 +37,10 @@ func (c *conn) connect(config TacacsConfig) error {
 	// 	idle = time.Duration(address.IdleTime) * time.Second
 	// }
 	// dialer.Timeout = idle
+
+	var keepAlive time.Duration
+	keepAlive = time.Second * 3
+	dialer.KeepAlive = keepAlive
 
 	if config.ServerPort == 0 {
 		return errors.New("invalid server port")

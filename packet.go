@@ -3,7 +3,7 @@
 //
 
 // packet.go
-package main
+package tacacs
 
 import (
 	"crypto/md5"
@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -82,7 +81,8 @@ func (h *TacacsHeader) unmarshal(data []byte) {
 }
 
 func (h *TacacsHeader) marshal() []byte {
-	buf := make([]byte, HeaderLen, 4)
+	buf := make([]byte, HeaderLen)
+	//fmt.Printf("debug, init buf len:%d\n", len(buf))
 	buf[VersionOffset] = h.Version
 	buf[TypeOffset] = h.Type
 	buf[SeqNoOffset] = h.SeqNo
@@ -193,145 +193,6 @@ func GetIP(addr string) (string, error) {
 			return string(data), nil
 		}
 	}
-}
-
-func AuthenASCII(username, passwd string) error {
-	sess, err := NewSession(TacacsMng.ctx, username, passwd)
-	if err != nil {
-		fmt.Printf("create new session fail,%s\n", err.Error())
-	}
-	//初始化认证报文
-	packet := &AuthenStartPacket{}
-	packet.Header.Version = (TacacsMajorVersion | TacacsMinorVersionDefault)
-	packet.Header.Type = TypeAuthen
-	packet.Header.SeqNo = sess.SessionSeqNo
-	sess.SessionSeqNo++
-	if sess.mng.Config.ConnMultiplexing {
-		packet.Header.Flags |= TacacsSingleConnectFlag
-	}
-	packet.Header.SessionID = sess.SessionID
-	packet.Action = TacacsAuthenActionLogin
-	packet.PrivLvl = TacacsPrivLvlRoot
-	packet.AuthenType = TacacsAuthenTypeASCII
-	packet.Service = TacacsAuthenServiceLogin
-
-	totalLen := HeaderLen + 8
-	packet.UserLen = uint8(len(username))
-	packet.User = username
-	totalLen += int(packet.UserLen)
-	//端口信息
-	port, err := GetPort(sess.t.netConn.nc.LocalAddr().String())
-	if err != nil {
-		fmt.Printf("GetPort Fail:%s\n", err.Error())
-	} else {
-		packet.Port = strconv.FormatUint(uint64(port), 16)
-		fmt.Printf("LocalPort : %d\n", port)
-	}
-	packet.PortLen = uint8(len(packet.Port))
-	totalLen += int(packet.PortLen)
-
-	//地址信息
-	addr, err := GetIP(sess.t.netConn.nc.LocalAddr().String())
-	if err != nil {
-		fmt.Printf("GetIP fail,%s\n", err.Error())
-		packet.RmtAddrLen = 0
-	} else {
-		packet.RmtAddr = addr
-		packet.RmtAddrLen = uint8(len(addr))
-	}
-	totalLen += int(packet.RmtAddrLen)
-
-	packet.DataLen = 0
-	packet.Header.Length = uint32(totalLen)
-	fmt.Printf("total len :%d\n", totalLen)
-
-	//创建发送缓存
-	data, err := packet.marshal()
-	if err != nil {
-		fmt.Printf("packet marshal fail, error msg :%s\n", err.Error())
-		return err
-	} else {
-		fmt.Printf("total byte :%d\n", len(data))
-	}
-
-	//加密数据
-	crypt(data, []byte(sess.mng.Config.ShareKey))
-
-	//发送到传输层
-	sess.t.sendChn <- data
-
-	//监听响应
-	for {
-		select {
-		case buffer := <-sess.ReadBuffer:
-			fmt.Printf("recv dataLen :%d\n", len(buffer))
-
-			reply := &AuthenReplyPacket{}
-
-			(&(reply.Header)).unmarshal(buffer)
-			fmt.Println("version: %d", reply.Header.Version)
-
-			//响应报文检查
-			err := reply.varify(sess)
-			if err != nil {
-				fmt.Printf("%s\n", err.Error())
-				return err
-			}
-
-			//解密
-			crypt(buffer, []byte(sess.mng.Config.ShareKey))
-
-			body := buffer[HeaderLen:]
-			reply.unmarshal(body)
-
-			switch reply.Status {
-			case TacacsAuthenStatusPass:
-				fmt.Printf("server reply pass\n")
-				//关闭连接
-				sess.t.close()
-				return nil
-			case TacacsAuthenStatusFail:
-				fmt.Printf("server reply fail\n")
-				break
-			case TacacsAuthenStatusGetData:
-				fmt.Printf("server reply getdata\n")
-				break
-			case TacacsAuthenStatusGetUser:
-				fmt.Printf("server reply getuser\n")
-				break
-			case TacacsAuthenStatusGetPass:
-				fmt.Printf("server reply getpass\n")
-				data := &AuthenContinuePacket{}
-				data.init(sess)
-				Buf, err := data.marshal()
-				if err != nil {
-					fmt.Printf("continue packet marshal fail\n")
-				} else {
-					crypt(Buf, []byte(sess.mng.Config.ShareKey))
-					sess.t.sendChn <- Buf
-					fmt.Println("send continue packet to transport buffer")
-				}
-			case TacacsAuthenStatusRestart:
-				fmt.Printf("server reply restart\n")
-				break
-			case TacacsAuthenStatusError:
-				fmt.Printf("server reply error\n")
-				break
-			case TacacsAuthenStatusFollow:
-				fmt.Printf("server reply follow\n")
-				break
-			default:
-				fmt.Printf("server reply unrecognized,%d\n", reply.Status)
-			}
-		case <-time.After(100 * time.Second):
-			fmt.Printf("receive reply timeout\n")
-			//关闭连接
-			sess.t.close()
-			return errors.New("timeout")
-		}
-	}
-	sess.t.close()
-	return nil
 }
 
 func (a *AuthenStartPacket) marshal() ([]byte, error) {
@@ -501,8 +362,8 @@ func (p *AuthenContinuePacket) init(s *Session) {
 func (p *AuthenContinuePacket) marshal() ([]byte, error) {
 	//buf := make([]byte, p.Header.Length+HeaderLen)
 
-	buf := &(p.Header).marshal()
-
+	buf := p.Header.marshal()
+	buf = append(buf, make([]byte, 4)...)
 	binary.BigEndian.PutUint16(buf[HeaderLen:], p.UserMsgLen)
 	binary.BigEndian.PutUint16(buf[(HeaderLen+2):], p.DataLen)
 	//fmt.Printf("continue packet totlen: %d\n", len(buf))
@@ -544,7 +405,7 @@ func crypt(p, key []byte) {
 	h := md5.New()
 
 	body := p[HeaderLen:]
-	//fmt.Printf("crypt body len:%d\n", len(body))
+	fmt.Printf("crypt body len:%d\n", len(body))
 
 	for len(body) > 0 {
 		h.Reset()

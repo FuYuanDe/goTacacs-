@@ -1,9 +1,10 @@
 // session.go
-package main
+package tacacs
 
 import (
 	"context"
 	"errors"
+	//"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -62,6 +63,9 @@ type Session struct {
 }
 
 func NewSession(ctx context.Context, name, passwd string) (*Session, error) {
+	if TacacsMng == nil {
+		return nil, errors.New("tacacs not init")
+	}
 	sess := &Session{}
 	sess.Password = passwd
 	sess.UserName = name
@@ -80,12 +84,26 @@ func NewSession(ctx context.Context, name, passwd string) (*Session, error) {
 	}
 	fmt.Printf("sessionID :%d\n", SessionID)
 	sess.SessionID = SessionID
-	t, err := newTransport(ctx, TacacsMng.Config)
-	if err != nil {
-		fmt.Printf("create new transport fail,%s\n", err.Error())
-		return nil, err
-	} else {
-		sess.t = t
+
+	sess.mng.Lock()
+	if sess.mng.ServerConnMultiplexing {
+		if sess.mng.Trans {
+			sess.t = sess.mng.Trans
+		}
+	}
+	sess.mng.Unlock()
+
+	if sess.t == nil {
+		t, err := newTransport(ctx, TacacsMng.Config)
+		if err != nil {
+			fmt.Printf("create new transport fail,%s\n", err.Error())
+			return nil, err
+		} else {
+			sess.t = t
+			sess.mng.Lock()
+			sess.mng.Trans = t
+			sess.mng.Unlock()
+		}
 	}
 
 	TacacsMng.Sessions.Store(SessionID, sess)
@@ -106,21 +124,11 @@ func TacacsInit() {
 
 func (sess *Session) close() {
 	sess.mng.Sessions.Delete(sess.SessionID)
-	sess.t.close()
-	//close(sess.)
-}
-
-func AuthenASCII(username, password string) error {
-	if TacacsMng == nil {
-		return errors.New("[tacacs] tacacs hasn't init ***")
-	} else {
-		sess, err := NewSession(TacacsMng.ctx, username, password)
-		if err != nil {
-			fmt.Printf("[tacacs] new session fail, %s", err.Error())
-			return err
-		} else {
-
+	sess.mng.Lock()
+	if !sess.mng.ServerConnMultiplexing {
+		if sess.mng.Trans == sess.t {
+			sess.mng.Trans.close()
 		}
 	}
-
+	sess.mng.Unlock()
 }

@@ -1,5 +1,5 @@
 // transport.go
-package main
+package tacacs
 
 import (
 	"context"
@@ -113,9 +113,9 @@ func (t *Transport) readLoop() {
 		} else {
 			tacacsType := uint8(h[TypeOffset])
 			switch tacacsType {
-			case TacacsTypeAcct:
-			case TacacsTypeAuthor:
-			case TacacsTypeAuthen:
+			case TypeAcct:
+			case TypeAuthor:
+			case TypeAuthen:
 			default:
 				fmt.Println("error, invalid tacacs version")
 				continue
