@@ -6,11 +6,15 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync"
 )
 
 type Transport struct {
 	netConn *conn
 	sendChn chan []byte
+	Done    bool
+	wg      sync.WaitGroup
+	sync.RWMutex
 }
 
 func newTransport(ctx context.Context, config TacacsConfig) (*Transport, error) {
@@ -24,6 +28,7 @@ func newTransport(ctx context.Context, config TacacsConfig) (*Transport, error) 
 	}
 
 	t.sendChn = make(chan []byte, 100)
+	t.wg.Add(2)
 	go t.readLoop()
 	go t.writeLoop()
 
@@ -34,15 +39,20 @@ func newTransport(ctx context.Context, config TacacsConfig) (*Transport, error) 
 func (t *Transport) close() {
 	t.netConn.Lock()
 	if t.netConn.nc != nil {
-		fmt.Println("close transport")
+		fmt.Println("close conn")
 		t.netConn.nc.Close()
-		t.netConn.nc = nil
 	}
 	t.netConn.Unlock()
+	t.Lock()
+	t.Done = true
 	close(t.sendChn)
+	t.Unlock()
+	t.wg.Wait()
+	fmt.Println("transport close success")
 }
 
 func (t *Transport) writeLoop() {
+	defer t.wg.Done()
 	for {
 		select {
 		case data, ok := <-t.sendChn:
@@ -58,7 +68,7 @@ func (t *Transport) writeLoop() {
 				num, err := t.netConn.nc.Write(data[sendLen:])
 				if err != nil {
 					fmt.Printf("conn write error:%s", err.Error())
-					break
+					return
 				}
 
 				sendLen += num
@@ -92,10 +102,11 @@ func (t *Transport) readPacketHdr() ([]byte, error) {
 }
 
 func (t *Transport) readLoop() {
+	defer t.wg.Done()
 	for {
 		t.netConn.RLock()
 		if t.netConn.nc == nil {
-			fmt.Printf("t.netConn.nc is nil")
+			fmt.Printf("t.netConn.nc is nil, return")
 			t.netConn.RUnlock()
 			return
 		}
@@ -104,7 +115,7 @@ func (t *Transport) readLoop() {
 		h, err := t.readPacketHdr()
 		if err != nil {
 			if err == io.EOF {
-				fmt.Printf("read EOF fail")
+				fmt.Printf("read EOF, conn closed")
 				return
 			}
 
@@ -141,14 +152,18 @@ func (t *Transport) readLoop() {
 func dispatch(data []byte) {
 
 	sessionID := binary.BigEndian.Uint32(data[SessionIDOffset:])
+
 	value, ok := TacacsMng.Sessions.Load(sessionID)
 	if ok {
 		sess, ok := value.(*Session)
 		if ok {
-			fmt.Printf("found session,dispatch success\n")
+			fmt.Printf("found session, dispatch success\n")
+			sess.Lock()
 			sess.ReadBuffer <- data
+			sess.Unlock()
+
 		} else {
-			fmt.Printf("*** error, interface assert fail ***")
+			fmt.Printf("*** error, interface assert fail ***\n")
 		}
 
 	} else {

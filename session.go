@@ -41,8 +41,9 @@ const (
 type Manager struct {
 	Sessions sync.Map
 
-	Trans *Transport
-	ctx   context.Context
+	Trans  *Transport
+	ctx    context.Context
+	cancel context.CancelFunc
 	sync.RWMutex
 
 	ServerConnMultiplexing bool
@@ -51,6 +52,7 @@ type Manager struct {
 
 type Session struct {
 	sync.Mutex
+	timeout      int
 	SessionSeqNo uint8
 	SessionID    uint32
 	UserName     string
@@ -62,13 +64,19 @@ type Session struct {
 	restart      bool
 }
 
-func NewSession(ctx context.Context, name, passwd string) (*Session, error) {
+func NewSession(ctx context.Context, timeout int, name, passwd string) (*Session, error) {
 	if TacacsMng == nil {
 		return nil, errors.New("tacacs not init")
 	}
 	sess := &Session{}
 	sess.Password = passwd
 	sess.UserName = name
+	if timeout == 0 {
+		sess.timeout = (1<<31 - 1)
+	} else {
+		sess.timeout = timeout
+	}
+
 	sess.SessionSeqNo = 1
 	sess.ReadBuffer = make(chan []byte, 10)
 	sess.mng = TacacsMng
@@ -87,21 +95,24 @@ func NewSession(ctx context.Context, name, passwd string) (*Session, error) {
 
 	sess.mng.Lock()
 	if sess.mng.ServerConnMultiplexing {
-		if sess.mng.Trans {
+		if sess.mng.Trans == nil {
 			sess.t = sess.mng.Trans
 		}
 	}
 	sess.mng.Unlock()
 
 	if sess.t == nil {
-		t, err := newTransport(ctx, TacacsMng.Config)
+		childCtx, _ := context.WithTimeout(ctx, time.Duration(sess.timeout)*time.Second)
+		t, err := newTransport(childCtx, TacacsMng.Config)
 		if err != nil {
 			fmt.Printf("create new transport fail,%s\n", err.Error())
 			return nil, err
 		} else {
 			sess.t = t
 			sess.mng.Lock()
-			sess.mng.Trans = t
+			if sess.mng.Trans == nil {
+				sess.mng.Trans = t
+			}
 			sess.mng.Unlock()
 		}
 	}
@@ -110,25 +121,51 @@ func NewSession(ctx context.Context, name, passwd string) (*Session, error) {
 	return sess, nil
 }
 
+func SessionDelete(key, value interface{}) bool {
+	sess, ok := value.(*Session)
+	if ok {
+		sess.close()
+	} else {
+		fmt.Printf("*** error, interface assert fail ***\n")
+	}
+	return true
+}
+
 var TacacsMng *Manager
 
 func TacacsInit() {
 	if TacacsMng == nil {
 		TacacsMng = &Manager{}
-		TacacsMng.ctx = context.TODO()
+		TacacsMng.ctx, TacacsMng.cancel = context.WithCancel(context.Background())
 		fmt.Printf("--> tacacs init success")
 	} else {
 		fmt.Printf("--> tacacs already init")
 	}
 }
 
+func TacacsExit() {
+	if TacacsMng == nil {
+		fmt.Println("error, tacacs not init, exit fail")
+	} else {
+		fmt.Println("close session....")
+		TacacsMng.Sessions.Range(SessionDelete)
+		TacacsMng.Lock()
+		if TacacsMng.Trans != nil {
+			TacacsMng.Trans.close()
+		}
+		TacacsMng.Unlock()
+		fmt.Printf("TACACS exit success\n")
+	}
+}
 func (sess *Session) close() {
 	sess.mng.Sessions.Delete(sess.SessionID)
 	sess.mng.Lock()
 	if !sess.mng.ServerConnMultiplexing {
 		if sess.mng.Trans == sess.t {
-			sess.mng.Trans.close()
+			sess.t.close()
+			sess.mng.Trans = nil
 		}
 	}
 	sess.mng.Unlock()
+	fmt.Println("session close success")
 }

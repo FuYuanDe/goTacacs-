@@ -79,6 +79,11 @@ func ASCIILoginContinue(sess *Session) error {
 		return errors.New("continue packet marshal fail")
 	} else {
 		crypt(Buf, []byte(sess.mng.Config.ShareKey))
+		sess.t.Lock()
+		defer sess.t.Unlock()
+		if sess.t.Done {
+			return errors.New("transport exit, send continue packet fail")
+		}
 		sess.t.sendChn <- Buf
 		fmt.Println("send continue packet to transport buffer")
 		return nil
@@ -104,27 +109,35 @@ func ASCIILoginReply(sess *Session, buffer []byte) (bool, error) {
 	case TacacsAuthenStatusPass:
 		fmt.Printf("server reply pass\n")
 		return true, nil
+
 	case TacacsAuthenStatusFail:
 		fmt.Printf("server reply fail\n")
 		return false, errors.New("server reply fail")
+
 	case TacacsAuthenStatusGetData:
 		fmt.Printf("server reply getdata\n")
 		return false, errors.New("unsupported option,server reply getdata")
+
 	case TacacsAuthenStatusGetUser:
 		fmt.Printf("server reply getuser\n")
 		return false, errors.New("unsupported option,server reply getuser")
+
 	case TacacsAuthenStatusGetPass:
 		fmt.Printf("server reply getpass\n")
 		return false, ASCIILoginContinue(sess)
+
 	case TacacsAuthenStatusRestart:
 		fmt.Printf("server reply restart\n")
 		return false, errors.New("unsupported option,server reply restart")
+
 	case TacacsAuthenStatusError:
 		fmt.Printf("server reply error\n")
 		return false, errors.New("server reply error")
+
 	case TacacsAuthenStatusFollow:
 		fmt.Printf("server reply follow\n")
 		return false, errors.New("unsupported option,server reply follow")
+
 	default:
 		fmt.Printf("server reply unrecognized,%d\n", reply.Status)
 		msg := fmt.Sprint("%s %d", "server reply unrecognized", reply.Status)
@@ -132,22 +145,32 @@ func ASCIILoginReply(sess *Session, buffer []byte) (bool, error) {
 	}
 }
 
-func AuthenASCII(username, password string) error {
+func AuthenASCII(timeout int, username, password string) error {
 	if TacacsMng == nil {
 		return errors.New("[tacacs] tacacs hasn't init, Authen fail, exit!")
 	} else {
-		sess, err := NewSession(TacacsMng.ctx, username, password)
+		sess, err := NewSession(TacacsMng.ctx, timeout, username, password)
 		if err != nil {
 			fmt.Printf("[tacacs] new session fail, %s", err.Error())
 			return err
 		} else {
+			//prepare the start packet
 			data, err := ASCIILoginStart(sess)
 			if err != nil {
 				fmt.Printf("[tacacs] new session fail, %s", err.Error())
 				sess.close()
 				return err
 			} else {
-				sess.t.sendChn <- data
+				sess.t.Lock()
+				if !sess.t.Done {
+					sess.t.sendChn <- data
+				} else {
+					fmt.Println("transport buffer closed, ASCIIAuthen fail")
+					sess.t.Unlock()
+					sess.close()
+					return errors.New("transport buffer closed, ASCIIAuthen fail")
+				}
+				sess.t.Unlock()
 
 				//waitting for server reply
 				for {
@@ -162,11 +185,15 @@ func AuthenASCII(username, password string) error {
 							fmt.Printf("authen success\n")
 							return nil
 						}
-					case <-time.After(100 * time.Second):
+					case <-time.After(time.Duration(sess.timeout) * time.Second):
 						fmt.Printf("receive reply timeout\n")
 						//关闭连接
-						sess.t.close()
+						sess.close()
 						return errors.New("timeout")
+					case <-sess.ctx.Done():
+						fmt.Printf("sess close")
+						sess.close()
+						return errors.New("session close")
 					}
 				}
 			}

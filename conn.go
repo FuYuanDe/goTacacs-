@@ -8,7 +8,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
-	"time"
+	//	"time"
 )
 
 type conn struct {
@@ -38,9 +38,9 @@ func (c *conn) connect(config TacacsConfig) error {
 	// }
 	// dialer.Timeout = idle
 
-	var keepAlive time.Duration
-	keepAlive = time.Second * 3
-	dialer.KeepAlive = keepAlive
+	//var keepAlive time.Duration
+	//keepAlive = time.Second * 3
+	//dialer.KeepAlive = keepAlive
 
 	if config.ServerPort == 0 {
 		return errors.New("invalid server port")
