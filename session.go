@@ -97,6 +97,7 @@ func NewSession(ctx context.Context, timeout int, name, passwd string) (*Session
 	if sess.mng.ServerConnMultiplexing {
 		if sess.mng.Trans == nil {
 			sess.t = sess.mng.Trans
+			fmt.Println("reuse transport")
 		}
 	}
 	sess.mng.Unlock()
@@ -137,9 +138,9 @@ func TacacsInit() {
 	if TacacsMng == nil {
 		TacacsMng = &Manager{}
 		TacacsMng.ctx, TacacsMng.cancel = context.WithCancel(context.Background())
-		fmt.Printf("--> tacacs init success")
+		fmt.Printf("--> tacacs init success\n")
 	} else {
-		fmt.Printf("--> tacacs already init")
+		fmt.Printf("--> tacacs already init\n")
 	}
 }
 
@@ -157,6 +158,7 @@ func TacacsExit() {
 		fmt.Printf("TACACS exit success\n")
 	}
 }
+
 func (sess *Session) close() {
 	sess.mng.Sessions.Delete(sess.SessionID)
 	sess.mng.Lock()

@@ -48,7 +48,7 @@ func (c *conn) connect(config TacacsConfig) error {
 
 	nc, err := dialer.DialContext(c.ctx, "tcp", net.JoinHostPort(config.ServerIP, strconv.FormatUint(uint64(config.ServerPort), 10)))
 	if err != nil {
-		fmt.Printf("Create tcp connection %s : %s fail:%s", config.ServerIP, config.ServerPort, err.Error())
+		fmt.Printf("Create tcp connection %s : %d  fail:%s", config.ServerIP, config.ServerPort, err.Error())
 		return err
 	}
 

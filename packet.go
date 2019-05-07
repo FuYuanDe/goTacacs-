@@ -285,16 +285,17 @@ func (a *AuthenReplyPacket) marshal() {
 
 func (a *AuthenReplyPacket) varify(s *Session) error {
 	//check version
-	if a.Header.Version != (TacacsMajorVersion | TacacsMinorVersionDefault) {
-		fmt.Printf("version:%d, expect:%d\n", a.Header.Version, (TacacsMajorVersion | TacacsMinorVersionDefault))
-		return errors.New("version mismatch")
-	}
+	//if a.Header.Version != (TacacsMajorVersion | TacacsMinorVersionDefault) {
+	//	fmt.Printf("version:%d, expect:%d\n", a.Header.Version, (TacacsMajorVersion | TacacsMinorVersionDefault))
+	//	return errors.New("version mismatch")
+	//}
 
 	//check flag
 	if a.Header.Flags == 1 {
 		s.mng.Lock()
 		if !s.mng.ServerConnMultiplexing {
 			s.mng.ServerConnMultiplexing = true
+			fmt.Println("server support ConnMultiplexing")
 		}
 		s.mng.Unlock()
 	}
@@ -405,7 +406,7 @@ func crypt(p, key []byte) {
 	h := md5.New()
 
 	body := p[HeaderLen:]
-	fmt.Printf("crypt body len:%d\n", len(body))
+	//fmt.Printf("crypt body len:%d\n", len(body))
 
 	for len(body) > 0 {
 		h.Reset()
@@ -423,4 +424,240 @@ func crypt(p, key []byte) {
 		}
 		body = body[len(sum):]
 	}
+}
+
+//6.1. The Authorization REQUEST Packet Body
+//
+//0				 7				  15			   23				31
+//+----------------+----------------+----------------+----------------+
+//| authen_method  | 	  priv_lvl  |   authen_type  | authen_service |
+//+----------------+----------------+----------------+----------------+
+//| user_len 	   |	  port_len  |   rem_addr_len | arg_cnt 		  |
+//+----------------+----------------+----------------+----------------+
+//| arg_1_len 	   |      arg_2_len | ... 	         | arg_N_len  	  |
+//+----------------+----------------+----------------+----------------+
+//| user ...
+//+----------------+----------------+----------------+----------------+
+//| port ...
+//+----------------+----------------+----------------+----------------+
+//| rem_addr ...
+//+----------------+----------------+----------------+----------------+
+//| arg_1 ...
+//+----------------+----------------+----------------+----------------+
+//| arg_2 ...
+//+----------------+----------------+----------------+----------------+
+//| ...
+//+----------------+----------------+----------------+----------------+
+//| arg_N ...
+//+----------------+----------------+----------------+----------------+
+//
+
+//authen_method
+//
+//This indicates the authentication method used by the client to
+//acquire the user information. As this information is not always
+//subject to verification, it is recommended that this field is
+//ignored.
+//
+const (
+	TacacsAuthenMethodNotSet     = uint8(0x00)
+	TacacsAuthenMethodNone       = uint8(0x01)
+	TacacsAuthenMethodKRB5       = uint8(0x02)
+	TacacsAuthenMethodLINE       = uint8(0x03)
+	TacacsAuthenMethodEnable     = uint8(0x04)
+	TacacsAuthenMethodLocal      = uint8(0x05)
+	TacacsAuthenMethodTACACSPLUS = uint8(0x06)
+
+	TacacsAuthenMethodGuest  = uint8(0x08)
+	TacacsAuthenMethodRADIUS = uint8(0x10)
+	TacacsAuthenMethodKRB4   = uint8(0x11)
+	TacacsAuthenMethodRCMD   = uint8(0x20)
+)
+
+//
+//authen_type
+//
+//This field coresponds to the authen_type field in the authentication
+//section (Section 5) above. It indicates the type of authentication
+//that was performed. If this information is not available, then the
+//client will set authen_type to: TAC_PLUS_AUTHEN_TYPE_NOT_SET := 0x00.
+//This value is valid only in authorization and accounting requests.
+//
+const (
+	TacacsAuthenTypeNotSet = uint8(0x00)
+)
+
+type AuthorRequest struct {
+	Header        TacacsHeader
+	AuthenMethod  uint8
+	PrivLvl       uint8
+	AuthenType    uint8
+	AuthenService uint8
+	UserLen       uint8
+	PortLen       uint8
+	RmtAddrLen    uint8
+	ArgCnt        uint8
+	//Arg1Len	uint8
+	//Arg2Len	uint8
+	//...
+	//ArgNLen	uint8
+}
+
+func (p *AuthorRequest) marshal() []byte {
+	//buf := make([]byte, HeaderLen+8)
+	buf := p.Header.marshal()
+	buf = append(buf, p.AuthenMethod, p.PrivLvl, p.AuthenType, p.AuthenService)
+	buf = append(buf, p.UserLen, p.PortLen, p.RmtAddrLen, p.ArgCnt)
+	return buf
+}
+
+//6.2. The Authorization REPLY Packet Body
+//
+//1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8
+//+----------------+----------------+----------------+----------------+
+//| status 		   | arg_cnt 		| server_msg len				  |
+//+----------------+----------------+----------------+----------------+
+//+ data_len 						| arg_1_len 	 | arg_2_len	  |
+//+----------------+----------------+----------------+----------------+
+//| ... 		   | arg_N_len		| server_msg ...
+//+----------------+----------------+----------------+----------------+
+//| data ...
+//+----------------+----------------+----------------+----------------+
+//| arg_1 ...
+//+----------------+----------------+----------------+----------------+
+//| arg_2 ...
+//+----------------+----------------+----------------+----------------+
+//| ...
+//+----------------+----------------+----------------+----------------+
+//| arg_N ...
+//+----------------+----------------+----------------+----------------+
+//
+//
+const (
+	TacacsAuthorStatusPassAdd  = uint8(0x01)
+	TacacsAuthorStatusPassRepl = uint8(0x02)
+	TacacsAuthorStatusFail     = uint8(0x10)
+	TacacsAuthorStatusError    = uint8(0x11)
+	TacacsAuthorStatusFollow   = uint8(0x21)
+)
+
+type AuthorReplyPacket struct {
+	Header       TacacsHeader
+	Status       uint8
+	ArgCnt       uint8
+	ServerMsgLen uint16
+	DataLen      uint16
+	//Arg1Len
+	//Arg2Len
+	//...
+	//ArgNLen
+	//ServerMsg
+	//Data
+	//Arg1
+	//Arg2
+	//...
+	//ArgN
+}
+
+func (p *AuthorReplyPacket) unmarshal(data []byte) {
+	p.Status = uint8(data[0])
+	p.ArgCnt = uint8(data[1])
+	p.ServerMsgLen = binary.BigEndian.Uint16(data[2:])
+	p.DataLen = binary.BigEndian.Uint16(data[4:])
+}
+
+//
+//7.1. The Account REQUEST Packet Body
+//
+//1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8
+//+----------------+----------------+----------------+----------------+
+//| flags 		   | authen_method  | priv_lvl 		 | authen_type 	  |
+//+----------------+----------------+----------------+----------------+
+//| authen_service | user_len 		| port_len 		 | rem_addr_len   |
+//+----------------+----------------+----------------+----------------+
+//| arg_cnt 	   | arg_1_len		| arg_2_len      | ... 			  |
+//+----------------+----------------+----------------+----------------+
+//| arg_N_len 	   | user ...
+//+----------------+----------------+----------------+----------------+
+//| port ...
+//+----------------+----------------+----------------+----------------+
+//| rem_addr ...
+//+----------------+----------------+----------------+----------------+
+//| arg_1 ...
+//+----------------+----------------+----------------+----------------+
+//| arg_2 ...
+//+----------------+----------------+----------------+----------------+
+//| ...
+//+----------------+----------------+----------------+----------------+
+//| arg_N ...
+//+----------------+----------------+----------------+----------------+
+//
+
+const (
+	TacacsAcctFlagStart    = uint8(0x02)
+	TacacsAcctFlagStop     = uint8(0x04)
+	TacacsAcctFlagWatchDog = uint8(0x08)
+)
+
+type AccountRequest struct {
+	Header        TacacsHeader
+	Flags         uint8
+	AuthenMethod  uint8
+	PrivLvl       uint8
+	AuthenType    uint8
+	AuthenService uint8
+	UserLen       uint8
+	PortLen       uint8
+	RmtAddrLen    uint8
+	ArgCnt        uint8
+	//Arg1Len  uint8
+	//ArgNLen  uint8
+	//user string
+	//port string
+	//...
+}
+
+func (p *AccountRequest) marshal() []byte {
+	//TODO
+	return []byte(nil)
+}
+
+//7.2. The Accounting REPLY Packet Body
+//
+//The purpose of accounting is to record the action that has occurred
+//on the client. The server MUST reply with success only when the
+//accounting request has been recorded. If the server did not record
+//the accounting request then it MUST reply with ERROR.
+//
+//1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8 1 2 3 4 5 6 7 8
+//+----------------+----------------+----------------+----------------+
+//| server_msg len 				 	| data_len 						  |
+//+----------------+----------------+----------------+----------------+
+//| status 		   | server_msg ...
+//+----------------+----------------+----------------+----------------+
+//| data ...
+//+----------------+
+//
+
+const (
+	TacacsAccountStatusSuccess = uint8(0x01)
+	TacacsAccountStatusError   = uint8(0x02)
+	TacacsAccountStatusFollow  = uint8(0x21)
+)
+
+type AccountReply struct {
+	Header       TacacsHeader
+	ServerMsgLen uint16
+	DataLen      uint16
+	Status       uint8
+	ServerMsg    string
+	Data         string
+}
+
+func (p *AccountReply) marshal() {
+	//TODO
+}
+
+func (p *AccountReply) unmarshal() {
+	//TODO
 }

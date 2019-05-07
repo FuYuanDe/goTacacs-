@@ -62,7 +62,7 @@ func (t *Transport) writeLoop() {
 			}
 
 			dataLen := len(data)
-			fmt.Printf("data to be send:%d\n", dataLen)
+			//fmt.Printf("data to be send:%d\n", dataLen)
 			sendLen := 0
 			for {
 				num, err := t.netConn.nc.Write(data[sendLen:])
@@ -73,7 +73,7 @@ func (t *Transport) writeLoop() {
 
 				sendLen += num
 				if dataLen == sendLen {
-					fmt.Println("conn write success")
+					//fmt.Println("conn write success")
 					break
 				}
 			}
@@ -115,7 +115,7 @@ func (t *Transport) readLoop() {
 		h, err := t.readPacketHdr()
 		if err != nil {
 			if err == io.EOF {
-				fmt.Printf("read EOF, conn closed")
+				fmt.Printf("read EOF, conn closed\n")
 				return
 			}
 
