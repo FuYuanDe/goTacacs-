@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	TacacsMajorVersion        = uint8(0xc << 4)
-	TacacsMinorVersionDefault = uint8(0x0)
-	TacacsMinorVersionOne     = uint8(0x1)
+	MajorVersion        = uint8(0xc << 4)
+	MinorVersionDefault = uint8(0x0)
+	MinorVersionOne     = uint8(0x1)
 )
 
 const (
@@ -27,8 +27,8 @@ const (
 )
 
 const (
-	TacacsSingleConnectFlag = uint8(0x04)
-	TacplusUnencryptedFlag  = uint8(0x01)
+	SingleConnectFlag = uint8(0x04)
+	UnencryptedFlag   = uint8(0x01)
 )
 
 /*
@@ -93,38 +93,38 @@ func (h *TacacsHeader) marshal() []byte {
 }
 
 const (
-	TacacsAuthenActionLogin    = uint8(0x01)
-	TacacsAuthenActionChPass   = uint8(0x02)
-	TacacsAuthenActionSendAuth = uint8(0x04)
+	AuthenActionLogin    = uint8(0x01)
+	AuthenActionChPass   = uint8(0x02)
+	AuthenActionSendAuth = uint8(0x04)
 )
 
 const (
-	TacacsAuthenTypeASCII    = uint8(0x01)
-	TacacsAuthenTypePAP      = uint8(0x02)
-	TacacsAuthenTypeCHAP     = uint8(0x03)
-	TacacsAuthenTypeARAP     = uint8(0x04) //(deprecated)
-	TacacsAuthenTypeMSCHAP   = uint8(0x05)
-	TacacsAuthenTypeMSCHAPV2 = uint8(0x06)
+	AuthenTypeASCII    = uint8(0x01)
+	AuthenTypePAP      = uint8(0x02)
+	AuthenTypeCHAP     = uint8(0x03)
+	AuthenTypeARAP     = uint8(0x04) //(deprecated)
+	AuthenTypeMSCHAP   = uint8(0x05)
+	AuthenTypeMSCHAPV2 = uint8(0x06)
 )
 
 const (
-	TacacsAuthenServiceNone    = uint8(0x00)
-	TacacsAuthenServiceLogin   = uint8(0x01)
-	TacacsAuthenServiceEnable  = uint8(0x02)
-	TacacsAuthenServicePPP     = uint8(0x03)
-	TacacsAuthenServiceARAP    = uint8(0x04)
-	TacacsAuthenServicePT      = uint8(0x05)
-	TacacsAuthenServiceRCMD    = uint8(0x06)
-	TacacsAuthenServiceX25     = uint8(0x07)
-	TacacsAuthenServiceNASI    = uint8(0x08)
-	TacacsAuthenServiceFWPROXY = uint8(0x09)
+	AuthenServiceNone    = uint8(0x00)
+	AuthenServiceLogin   = uint8(0x01)
+	AuthenServiceEnable  = uint8(0x02)
+	AuthenServicePPP     = uint8(0x03)
+	AuthenServiceARAP    = uint8(0x04)
+	AuthenServicePT      = uint8(0x05)
+	AuthenServiceRCMD    = uint8(0x06)
+	AuthenServiceX25     = uint8(0x07)
+	AuthenServiceNASI    = uint8(0x08)
+	AuthenServiceFWPROXY = uint8(0x09)
 )
 
 const (
-	TacacsPrivLvlMax  = uint8(0x0f)
-	TacacsPrivLvlRoot = uint8(0x0f)
+	PrivLvlMax        = uint8(0x0f)
+	PrivLvlRoot       = uint8(0x0f)
 	TacacsPrivLvlUser = uint8(0x01)
-	TacacsPrivLvlMin  = uint8(0x00)
+	PrivLvlMin        = uint8(0x00)
 )
 
 /*
@@ -146,7 +146,7 @@ const (
 +----------------+----------------+----------------+----------------+
 */
 
-type AuthenStartPacket struct {
+type AuthenStart struct {
 	Header     TacacsHeader
 	Action     uint8
 	PrivLvl    uint8
@@ -195,7 +195,7 @@ func GetIP(addr string) (string, error) {
 	}
 }
 
-func (a *AuthenStartPacket) marshal() ([]byte, error) {
+func (a *AuthenStart) marshal() ([]byte, error) {
 	buf := (&a.Header).marshal()
 
 	buf = append(buf, a.Action, a.PrivLvl, a.AuthenType, a.Service)
@@ -209,27 +209,27 @@ func (a *AuthenStartPacket) marshal() ([]byte, error) {
 	return buf, nil
 }
 
-func (a *AuthenStartPacket) unmarshal() {
+func (a *AuthenStart) unmarshal() {
 
 }
 
 const (
-	TacacsAuthenStatusPass    = uint8(0x01)
-	TacacsAuthenStatusFail    = uint8(0x02)
-	TacacsAuthenStatusGetData = uint8(0x03)
-	TacacsAuthenStatusGetUser = uint8(0x04)
-	TacacsAuthenStatusGetPass = uint8(0x05)
-	TacacsAuthenStatusRestart = uint8(0x06)
-	TacacsAuthenStatusError   = uint8(0x07)
-	TacacsAuthenStatusFollow  = uint8(0x21)
+	AuthenStatusPass    = uint8(0x01)
+	AuthenStatusFail    = uint8(0x02)
+	AuthenStatusGetData = uint8(0x03)
+	AuthenStatusGetUser = uint8(0x04)
+	AuthenStatusGetPass = uint8(0x05)
+	AuthenStatusRestart = uint8(0x06)
+	AuthenStatusError   = uint8(0x07)
+	AuthenStatusFollow  = uint8(0x21)
 )
 
 const (
-	TacacsReplyFlagNoEcho = uint8(0x01)
+	ReplyFlagNoEcho = uint8(0x01)
 )
 
 const (
-	TacacsContinueFlagAbort = uint8(0x01)
+	ContinueFlagAbort = uint8(0x01)
 )
 
 /*
@@ -285,8 +285,8 @@ func (a *AuthenReplyPacket) marshal() {
 
 func (a *AuthenReplyPacket) varify(s *Session) error {
 	//check version
-	//if a.Header.Version != (TacacsMajorVersion | TacacsMinorVersionDefault) {
-	//	fmt.Printf("version:%d, expect:%d\n", a.Header.Version, (TacacsMajorVersion | TacacsMinorVersionDefault))
+	//if a.Header.Version != (MajorVersion | MinorVersionDefault) {
+	//	fmt.Printf("version:%d, expect:%d\n", a.Header.Version, (MajorVersion | MinorVersionDefault))
 	//	return errors.New("version mismatch")
 	//}
 
@@ -342,13 +342,13 @@ type AuthenContinuePacket struct {
 func (p *AuthenContinuePacket) init(s *Session) {
 	s.Lock()
 	defer s.Unlock()
-	p.Header.Version = (TacacsMajorVersion | TacacsMinorVersionDefault)
+	p.Header.Version = (MajorVersion | MinorVersionDefault)
 	p.Header.Type = TypeAuthen
 	p.Header.SeqNo = s.SessionSeqNo
 	s.SessionSeqNo++
 	s.mng.Lock()
 	if s.mng.Config.ConnMultiplexing {
-		p.Header.Flags |= TacacsSingleConnectFlag
+		p.Header.Flags |= SingleConnectFlag
 	}
 	s.mng.Unlock()
 
@@ -460,18 +460,18 @@ func crypt(p, key []byte) {
 //ignored.
 //
 const (
-	TacacsAuthenMethodNotSet     = uint8(0x00)
-	TacacsAuthenMethodNone       = uint8(0x01)
-	TacacsAuthenMethodKRB5       = uint8(0x02)
-	TacacsAuthenMethodLINE       = uint8(0x03)
-	TacacsAuthenMethodEnable     = uint8(0x04)
-	TacacsAuthenMethodLocal      = uint8(0x05)
-	TacacsAuthenMethodTACACSPLUS = uint8(0x06)
+	AuthenMethodNotSet     = uint8(0x00)
+	AuthenMethodNone       = uint8(0x01)
+	AuthenMethodKRB5       = uint8(0x02)
+	AuthenMethodLINE       = uint8(0x03)
+	AuthenMethodEnable     = uint8(0x04)
+	AuthenMethodLocal      = uint8(0x05)
+	AuthenMethodTACACSPLUS = uint8(0x06)
 
-	TacacsAuthenMethodGuest  = uint8(0x08)
-	TacacsAuthenMethodRADIUS = uint8(0x10)
-	TacacsAuthenMethodKRB4   = uint8(0x11)
-	TacacsAuthenMethodRCMD   = uint8(0x20)
+	AuthenMethodGuest  = uint8(0x08)
+	AuthenMethodRADIUS = uint8(0x10)
+	AuthenMethodKRB4   = uint8(0x11)
+	AuthenMethodRCMD   = uint8(0x20)
 )
 
 //
@@ -484,7 +484,7 @@ const (
 //This value is valid only in authorization and accounting requests.
 //
 const (
-	TacacsAuthenTypeNotSet = uint8(0x00)
+	AuthenTypeNotSet = uint8(0x00)
 )
 
 type AuthorRequest struct {
@@ -534,14 +534,14 @@ func (p *AuthorRequest) marshal() []byte {
 //
 //
 const (
-	TacacsAuthorStatusPassAdd  = uint8(0x01)
-	TacacsAuthorStatusPassRepl = uint8(0x02)
-	TacacsAuthorStatusFail     = uint8(0x10)
-	TacacsAuthorStatusError    = uint8(0x11)
-	TacacsAuthorStatusFollow   = uint8(0x21)
+	AuthorStatusPassAdd  = uint8(0x01)
+	AuthorStatusPassREPL = uint8(0x02)
+	AuthorStatusFail     = uint8(0x10)
+	AuthorStatusError    = uint8(0x11)
+	AuthorStatusFollow   = uint8(0x21)
 )
 
-type AuthorReplyPacket struct {
+type AuthorReply struct {
 	Header       TacacsHeader
 	Status       uint8
 	ArgCnt       uint8
@@ -559,11 +559,54 @@ type AuthorReplyPacket struct {
 	//ArgN
 }
 
-func (p *AuthorReplyPacket) unmarshal(data []byte) {
-	p.Status = uint8(data[0])
-	p.ArgCnt = uint8(data[1])
-	p.ServerMsgLen = binary.BigEndian.Uint16(data[2:])
-	p.DataLen = binary.BigEndian.Uint16(data[4:])
+func (p *AuthorReply) unmarshal(data []byte) {
+	(&p.Header).unmarshal(data)
+	p.Status = uint8(data[0+HeaderLen])
+	p.ArgCnt = uint8(data[1+HeaderLen])
+	p.ServerMsgLen = binary.BigEndian.Uint16(data[(2 + HeaderLen):])
+	p.DataLen = binary.BigEndian.Uint16(data[(4 + HeaderLen):])
+}
+
+func (p *AuthorReply) SanityCheck(sess *Session, data []byte) error {
+	if p.Header.Version != (MajorVersion | MinorVersionDefault) {
+		return errors.New("invalid version, author reply check fail")
+	}
+
+	//check Single Connect Flag
+	if (p.Header.Flags & SingleConnectFlag) == 1 {
+		sess.mng.Lock()
+		if !sess.mng.ServerConnMultiplexing {
+			sess.mng.ServerConnMultiplexing = true
+			fmt.Println("server support ConnMultiplexing")
+		}
+		sess.mng.Unlock()
+	}
+
+	//check unencrypted flag, only set when debug
+	if (p.Header.Flags & UnencryptedFlag) == 1 {
+		fmt.Printf("Warning! unencrypted packet,not support\n")
+		return errors.New("Warning! unencrypted packet,not support")
+	}
+
+	//check seqNo
+	sess.Lock()
+	if p.Header.SeqNo == sess.SessionSeqNo {
+		if sess.SessionSeqNo == 255 {
+			sess.restart = true
+			sess.Unlock()
+			return errors.New("session seqNo overflow,restart")
+		} else {
+			sess.SessionSeqNo++
+		}
+	}
+	sess.Unlock()
+
+	if len(data) != int(p.Header.Length+HeaderLen) {
+		fmt.Printf("invalid author response,recv:%d, hdr->len:%d\n", len(data), int(p.Header.Length+HeaderLen))
+		return errors.New("invalid author response, packet size not match")
+	}
+
+	return nil
 }
 
 //
@@ -594,9 +637,9 @@ func (p *AuthorReplyPacket) unmarshal(data []byte) {
 //
 
 const (
-	TacacsAcctFlagStart    = uint8(0x02)
-	TacacsAcctFlagStop     = uint8(0x04)
-	TacacsAcctFlagWatchDog = uint8(0x08)
+	AcctFlagStart    = uint8(0x02)
+	AcctFlagStop     = uint8(0x04)
+	AcctFlagWatchDog = uint8(0x08)
 )
 
 type AccountRequest struct {
@@ -618,8 +661,11 @@ type AccountRequest struct {
 }
 
 func (p *AccountRequest) marshal() []byte {
-	//TODO
-	return []byte(nil)
+	buf := (&p.Header).marshal()
+
+	buf = append(buf, p.Flags, p.AuthenMethod, p.PrivLvl, p.AuthenType, p.AuthenService)
+	buf = append(buf, p.UserLen, p.PortLen, p.RmtAddrLen, p.ArgCnt)
+	return buf
 }
 
 //7.2. The Accounting REPLY Packet Body
@@ -640,9 +686,9 @@ func (p *AccountRequest) marshal() []byte {
 //
 
 const (
-	TacacsAccountStatusSuccess = uint8(0x01)
-	TacacsAccountStatusError   = uint8(0x02)
-	TacacsAccountStatusFollow  = uint8(0x21)
+	AccountStatusSuccess = uint8(0x01)
+	AccountStatusError   = uint8(0x02)
+	AccountStatusFollow  = uint8(0x21)
 )
 
 type AccountReply struct {
@@ -658,6 +704,61 @@ func (p *AccountReply) marshal() {
 	//TODO
 }
 
-func (p *AccountReply) unmarshal() {
-	//TODO
+func (p *AccountReply) unmarshal(data []byte) {
+	(&p.Header).unmarshal(data)
+	p.ServerMsgLen = binary.BigEndian.Uint16(data[HeaderLen:])
+	p.DataLen = binary.BigEndian.Uint16(data[(2 + HeaderLen):])
+	p.Status = uint8(data[4+HeaderLen])
+
+	if p.ServerMsgLen != 0 {
+		p.ServerMsg = string(data[(HeaderLen + 5):(p.ServerMsgLen + HeaderLen + 5)])
+		//fmt.Println("server msg: " + string(a.ServerMsg))
+	}
+
+	if p.DataLen != 0 {
+		p.Data = string(data[(p.ServerMsgLen + 5 + HeaderLen):])
+		//fmt.Println("data msg : " + string(a.Data))
+	}
+}
+
+func (p *AccountReply) SanityCheck(sess *Session, data []byte) error {
+	if p.Header.Version != (MajorVersion | MinorVersionDefault) {
+		return errors.New("invalid version, author reply check fail")
+	}
+
+	//check Single Connect Flag
+	if (p.Header.Flags & SingleConnectFlag) == 1 {
+		sess.mng.Lock()
+		if !sess.mng.ServerConnMultiplexing {
+			sess.mng.ServerConnMultiplexing = true
+			fmt.Println("server support ConnMultiplexing")
+		}
+		sess.mng.Unlock()
+	}
+
+	//check unencrypted flag, only set when debug
+	if (p.Header.Flags & UnencryptedFlag) == 1 {
+		fmt.Printf("Warning! unencrypted packet,not support\n")
+		return errors.New("Warning! unencrypted packet,not support")
+	}
+
+	//check seqNo
+	sess.Lock()
+	if p.Header.SeqNo == sess.SessionSeqNo {
+		if sess.SessionSeqNo == 255 {
+			sess.restart = true
+			sess.Unlock()
+			return errors.New("session seqNo overflow,restart")
+		} else {
+			sess.SessionSeqNo++
+		}
+	}
+	sess.Unlock()
+
+	if len(data) != int(p.Header.Length+HeaderLen) {
+		fmt.Printf("invalid author response,recv:%d, hdr->len:%d\n", len(data), int(p.Header.Length+HeaderLen))
+		return errors.New("invalid author response, packet size not match")
+	}
+
+	return nil
 }

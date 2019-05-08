@@ -22,15 +22,17 @@ import (
 //"lat", "xremote", "tn3270", "telnet", "rlogin", "pad", "vpdn", "ftp",
 //"http", "deccp", "osicp" and "unknown".
 //
+//....
+//
 
 func AuthorStart(sess *Session, authorMethod, privLvl, authorType, authorSvc uint8, AttrValuePair ...string) []byte {
 	p := &AuthorRequest{}
-	p.Header.Version = (TacacsMajorVersion | TacacsMinorVersionDefault)
+	p.Header.Version = (MajorVersion | MinorVersionDefault)
 	p.Header.Type = TypeAuthor
 	p.Header.SeqNo = sess.SessionSeqNo
 	sess.SessionSeqNo++
 	if sess.mng.Config.ConnMultiplexing {
-		p.Header.Flags |= TacacsSingleConnectFlag
+		p.Header.Flags |= SingleConnectFlag
 	}
 	p.Header.SessionID = sess.SessionID
 	p.Header.Length = 8
@@ -60,18 +62,20 @@ func AuthorStart(sess *Session, authorMethod, privLvl, authorType, authorSvc uin
 	p.Header.Length += uint32(p.RmtAddrLen)
 	p.ArgCnt = uint8(len(AttrValuePair))
 	if p.ArgCnt != 0 {
+		p.Header.Length += uint32(len(AttrValuePair))
 		for _, arg := range AttrValuePair {
 			fmt.Printf("arg:%s,len:%d\n", arg, len(arg))
 			p.Header.Length += uint32(len(arg))
 		}
 	}
+
 	buf := p.marshal()
 	if p.ArgCnt != 0 {
 		for _, arg := range AttrValuePair {
 			buf = append(buf, uint8(len(arg)))
 		}
 	}
-	fmt.Printf("len(AuthorRequest):%d\n", len(buf))
+
 	buf = append(buf, sess.UserName...)
 	if p.PortLen != 0 {
 		buf = append(buf, (strconv.FormatUint(uint64(port), 16))...)
@@ -80,8 +84,50 @@ func AuthorStart(sess *Session, authorMethod, privLvl, authorType, authorSvc uin
 	for _, arg := range AttrValuePair {
 		buf = append(buf, arg...)
 	}
+	fmt.Printf("len(AuthorRequest):%d\n", len(buf))
 	crypt(buf, []byte(sess.mng.Config.ShareKey))
 	return buf
+}
+
+func AuthorResponse(sess *Session, data []byte) error {
+	p := &AuthorReply{}
+	crypt(data, []byte(sess.mng.Config.ShareKey))
+	p.unmarshal(data)
+
+	err := p.SanityCheck(sess, data)
+	if err != nil {
+		return err
+	}
+
+	switch p.Status {
+	//
+	//If the status equals TAC_PLUS_AUTHOR_STATUS_PASS_ADD, then the
+	//arguments specified in the request are authorized and the arguments in
+	//the response are to be used IN ADDITION to those arguments.
+	//
+	case AuthorStatusPassAdd:
+
+		fmt.Printf("Author success\n")
+
+		return nil
+	//
+	//If the status equals TAC_PLUS_AUTHOR_STATUS_PASS_REPL then the
+	//arguments in the request are to be completely replaced by the
+	//arguments in the response.
+	//
+	case AuthorStatusPassREPL:
+		fmt.Printf("Server Response REPLACE	")
+		return nil
+	case AuthorStatusFail:
+		return errors.New("Server Response Fail")
+	case AuthorStatusError:
+		return errors.New("Server Response Error")
+	case AuthorStatusFollow:
+		return errors.New("Server Response Follow")
+	default:
+		fmt.Printf("unsupported author response status:%d\n", p.Status)
+		return errors.New("unsupported author response status")
+	}
 }
 
 func Author(sess *Session, authorMethod, privLvl, authorType, authorSvc uint8, AttrValuePair ...string) error {
@@ -90,6 +136,7 @@ func Author(sess *Session, authorMethod, privLvl, authorType, authorSvc uint8, A
 	data := AuthorStart(sess, authorMethod, privLvl, authorType, authorSvc, AttrValuePair...)
 	sess.t.Lock()
 	if !sess.t.Done {
+		fmt.Printf("write len:%d\n", len(data))
 		sess.t.sendChn <- data
 	} else {
 		fmt.Println("transport buffer closed, ASCIIAuthen fail")
@@ -104,23 +151,14 @@ func Author(sess *Session, authorMethod, privLvl, authorType, authorSvc uint8, A
 		select {
 		case buffer := <-sess.ReadBuffer:
 			fmt.Println("receive author reply,len:", len(buffer))
-			return nil
-			/*
-				done, err := ASCIILoginReply(sess, buffer)
-				if err != nil {
-					sess.close()
-					fmt.Printf("authen fail,error %s\n", err.Error())
-					return err
-				} else if done {
-					fmt.Printf("authen success\n")
-					return nil
-				}
-			*/
+			return AuthorResponse(sess, buffer)
+
 		case <-time.After(time.Duration(sess.timeout) * time.Second):
 			fmt.Printf("receive reply timeout\n")
 			//关闭连接
 			//sess.close()
 			return errors.New("timeout")
+
 		case <-sess.ctx.Done():
 			fmt.Printf("sess close")
 			//sess.close()

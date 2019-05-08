@@ -8,24 +8,23 @@ import (
 	"time"
 )
 
-//创建session的时候根据配置来设置传输层
 func ASCIILoginStart(sess *Session) ([]byte, error) {
 	sess.Lock()
 	defer sess.Unlock()
 
-	packet := &AuthenStartPacket{}
-	packet.Header.Version = (TacacsMajorVersion | TacacsMinorVersionDefault)
+	packet := &AuthenStart{}
+	packet.Header.Version = (MajorVersion | MinorVersionDefault)
 	packet.Header.Type = TypeAuthen
 	packet.Header.SeqNo = sess.SessionSeqNo
 	sess.SessionSeqNo++
 	if sess.mng.Config.ConnMultiplexing {
-		packet.Header.Flags |= TacacsSingleConnectFlag
+		packet.Header.Flags |= SingleConnectFlag
 	}
 	packet.Header.SessionID = sess.SessionID
-	packet.Action = TacacsAuthenActionLogin
-	packet.PrivLvl = TacacsPrivLvlRoot
-	packet.AuthenType = TacacsAuthenTypeASCII
-	packet.Service = TacacsAuthenServiceLogin
+	packet.Action = AuthenActionLogin
+	packet.PrivLvl = PrivLvlRoot
+	packet.AuthenType = AuthenTypeASCII
+	packet.Service = AuthenServiceLogin
 
 	totalLen := 8
 	packet.UserLen = uint8(len(sess.UserName))
@@ -106,35 +105,35 @@ func ASCIILoginReply(sess *Session, buffer []byte) (bool, error) {
 	reply.unmarshal(body)
 
 	switch reply.Status {
-	case TacacsAuthenStatusPass:
+	case AuthenStatusPass:
 		fmt.Printf("server reply pass\n")
 		return true, nil
 
-	case TacacsAuthenStatusFail:
+	case AuthenStatusFail:
 		fmt.Printf("server reply fail\n")
 		return false, errors.New("server reply fail")
 
-	case TacacsAuthenStatusGetData:
+	case AuthenStatusGetData:
 		fmt.Printf("server reply getdata\n")
 		return false, errors.New("unsupported option,server reply getdata")
 
-	case TacacsAuthenStatusGetUser:
+	case AuthenStatusGetUser:
 		fmt.Printf("server reply getuser\n")
 		return false, errors.New("unsupported option,server reply getuser")
 
-	case TacacsAuthenStatusGetPass:
+	case AuthenStatusGetPass:
 		fmt.Printf("server reply getpass\n")
 		return false, ASCIILoginContinue(sess)
 
-	case TacacsAuthenStatusRestart:
+	case AuthenStatusRestart:
 		fmt.Printf("server reply restart\n")
 		return false, errors.New("unsupported option,server reply restart")
 
-	case TacacsAuthenStatusError:
+	case AuthenStatusError:
 		fmt.Printf("server reply error\n")
 		return false, errors.New("server reply error")
 
-	case TacacsAuthenStatusFollow:
+	case AuthenStatusFollow:
 		fmt.Printf("server reply follow\n")
 		return false, errors.New("unsupported option,server reply follow")
 
@@ -293,19 +292,19 @@ func PAPAuthenStart(sess *Session) ([]byte, error) {
 	sess.Lock()
 	defer sess.Unlock()
 
-	packet := &AuthenStartPacket{}
-	packet.Header.Version = (TacacsMajorVersion | TacacsMinorVersionOne)
+	packet := &AuthenStart{}
+	packet.Header.Version = (MajorVersion | MinorVersionOne)
 	packet.Header.Type = TypeAuthen
 	packet.Header.SeqNo = sess.SessionSeqNo
 	sess.SessionSeqNo++
 	if sess.mng.Config.ConnMultiplexing {
-		packet.Header.Flags |= TacacsSingleConnectFlag
+		packet.Header.Flags |= SingleConnectFlag
 	}
 	packet.Header.SessionID = sess.SessionID
-	packet.Action = TacacsAuthenActionLogin
-	packet.PrivLvl = TacacsPrivLvlRoot
-	packet.AuthenType = TacacsAuthenTypePAP
-	packet.Service = TacacsAuthenServiceLogin
+	packet.Action = AuthenActionLogin
+	packet.PrivLvl = PrivLvlRoot
+	packet.AuthenType = AuthenTypePAP
+	packet.Service = AuthenServiceLogin
 
 	totalLen := 8
 	packet.UserLen = uint8(len(sess.UserName))
@@ -369,35 +368,35 @@ func PAPAuthenReply(sess *Session, buffer []byte) (bool, error) {
 	reply.unmarshal(body)
 
 	switch reply.Status {
-	case TacacsAuthenStatusPass:
+	case AuthenStatusPass:
 		fmt.Printf("server reply pass\n")
 		return true, nil
 
-	case TacacsAuthenStatusFail:
+	case AuthenStatusFail:
 		fmt.Printf("server reply fail\n")
 		return false, errors.New("server reply fail")
 
-	case TacacsAuthenStatusGetData:
+	case AuthenStatusGetData:
 		fmt.Printf("server reply getdata\n")
 		return false, errors.New("unsupported option,server reply getdata")
 
-	case TacacsAuthenStatusGetUser:
+	case AuthenStatusGetUser:
 		fmt.Printf("server reply getuser\n")
 		return false, errors.New("unsupported option,server reply getuser")
 
-	case TacacsAuthenStatusGetPass:
+	case AuthenStatusGetPass:
 		fmt.Printf("server reply getpass\n")
 		return false, errors.New("unsupported option,server reply getPass")
 
-	case TacacsAuthenStatusRestart:
+	case AuthenStatusRestart:
 		fmt.Printf("server reply restart\n")
 		return false, errors.New("unsupported option,server reply restart")
 
-	case TacacsAuthenStatusError:
+	case AuthenStatusError:
 		fmt.Printf("server reply error\n")
 		return false, errors.New("server reply error")
 
-	case TacacsAuthenStatusFollow:
+	case AuthenStatusFollow:
 		fmt.Printf("server reply follow\n")
 		return false, errors.New("unsupported option,server reply follow")
 
@@ -502,7 +501,7 @@ func AuthenMSCHAPv2() error {
 //request, the value of the authen_service field MUST be set to
 //TAC_PLUS_AUTHEN_SVC_ENABLE when requesting an ENABLE. It MUST NOT be
 //set to this value when requesting any other operation.
-func AuthenServiceEnable() error {
+func AuthenEnable() error {
 	//TODO
 	return nil
 }

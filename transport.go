@@ -114,13 +114,9 @@ func (t *Transport) readLoop() {
 
 		h, err := t.readPacketHdr()
 		if err != nil {
-			if err == io.EOF {
-				fmt.Printf("read EOF, conn closed\n")
-				return
-			}
 
-			fmt.Printf("read packet header fail:%s", err.Error())
-			continue
+			fmt.Printf("read packet header fail:%s\n", err.Error())
+			return
 		} else {
 			tacacsType := uint8(h[TypeOffset])
 			switch tacacsType {
@@ -144,7 +140,7 @@ func (t *Transport) readLoop() {
 			continue
 		}
 
-		fmt.Println("conn read success,dataLen:", len(recv))
+		//fmt.Println("conn read success,dataLen:", len(recv))
 		dispatch(recv)
 	}
 }
